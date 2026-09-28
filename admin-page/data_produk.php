@@ -96,7 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($action === 'create') {
         $name = trim($_POST['name'] ?? '');
-        $category_id = intval($_POST['category_id'] ?? 0);
+        if ($categoryIsString) {
+            $category_id = trim($_POST['category_id'] ?? '');
+        } else {
+            $category_id = intval($_POST['category_id'] ?? 0);
+        }
         $price = intval($_POST['price'] ?? 0);
         $stock = intval($_POST['stock'] ?? 0);
         $wood_type = trim($_POST['wood_type'] ?? '');
@@ -150,8 +154,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         if (!$error) {
+            if ($categoryIsString && $category_id === '') {
+                $error = 'Kategori wajib dipilih.';
+            }
+        }
+
+        if (!$error) {
             $insertCols = [$productsNameColumn, $categoryColumn, $priceColumn, $stockColumn];
-            $insertTypes = 'siii';
+            // Determine types: name (s), category may be string (s) or int (i), price (i), stock (i)
+            $insertTypes = $categoryIsString ? 'ssii' : 'siii';
             $insertValues = [$name, $category_id, $price, $stock];
 
             if ($woodTypeColumn) {
@@ -214,7 +225,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     } elseif ($action === 'update') {
         $id = intval($_POST['id'] ?? 0);
         $name = trim($_POST['name'] ?? '');
-        $category_id = intval($_POST['category_id'] ?? 0);
+        if ($categoryIsString) {
+            $category_id = trim($_POST['category_id'] ?? '');
+        } else {
+            $category_id = intval($_POST['category_id'] ?? 0);
+        }
         $price = intval($_POST['price'] ?? 0);
         $stock = intval($_POST['stock'] ?? 0);
         $wood_type = trim($_POST['wood_type'] ?? '');
@@ -293,13 +308,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         if (!$error) {
+            if ($categoryIsString && $category_id === '') {
+                $error = 'Kategori wajib dipilih.';
+            }
+        }
+
+        if (!$error) {
             $updateParts = [
                 "$productsNameColumn=?",
                 "$categoryColumn=?",
                 "$priceColumn=?",
                 "$stockColumn=?"
             ];
-            $updateTypes = 'siii';
+            // name (s), category may be string (s) or int (i), price (i), stock (i)
+            $updateTypes = $categoryIsString ? 'ssii' : 'siii';
             $updateValues = [$name, $category_id, $price, $stock];
 
             if ($woodTypeColumn) {
@@ -378,30 +400,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
 // Ambil daftar kategori
 $categories = [];
+$categoryValueField = $categoryIsString ? 'name' : 'id';
 $catRes = $conn->query("SELECT id, name FROM categories ORDER BY name ASC");
 if ($catRes) {
     while ($row = $catRes->fetch_assoc()) {
         $categories[] = $row;
-    }
-}
-
-// Ambil daftar nilai unik untuk jenis kayu dan warna dari tabel products (jika kolom ada)
-$woodTypes = [];
-$colors = [];
-if ($woodTypeColumn) {
-    $wq = $conn->query("SELECT DISTINCT " . $woodTypeColumn . " AS val FROM products WHERE " . $woodTypeColumn . " IS NOT NULL AND " . $woodTypeColumn . "<>'' ORDER BY " . $woodTypeColumn . " ASC");
-    if ($wq) {
-        while ($r = $wq->fetch_assoc()) {
-            $woodTypes[] = $r['val'];
-        }
-    }
-}
-if ($colorColumn) {
-    $cq = $conn->query("SELECT DISTINCT " . $colorColumn . " AS val FROM products WHERE " . $colorColumn . " IS NOT NULL AND " . $colorColumn . "<>'' ORDER BY " . $colorColumn . " ASC");
-    if ($cq) {
-        while ($r = $cq->fetch_assoc()) {
-            $colors[] = $r['val'];
-        }
     }
 }
 
@@ -523,7 +526,6 @@ if (empty($error)) {
         table td { border-bottom: 1px solid #e2e8f0; padding: 12px; }
         table tr:hover { background: #f7fafc; }
         .thumb { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; }
-        .clickable { cursor: pointer; margin-right: 6px; }
         .action-btn { padding: 6px 12px; margin-right: 8px; font-size: 12px; }
         @media (max-width: 900px) {
             .form-row { grid-template-columns: 1fr; }
@@ -617,7 +619,7 @@ if (empty($error)) {
 
             <div class="section-header">Tambah Produk Baru</div>
             <div class="section-content">
-                <form id="createForm" method="post" enctype="multipart/form-data">
+                <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="create">
                     <div class="form-row">
                         <div class="form-group">
@@ -629,7 +631,7 @@ if (empty($error)) {
                             <select name="category_id" required>
                                 <option value="">-- Pilih Kategori --</option>
                                 <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo $cat['id']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
+                                    <option value="<?php echo htmlspecialchars($categoryValueField === 'name' ? $cat['name'] : $cat['id']); ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -645,27 +647,11 @@ if (empty($error)) {
                         </div>
                         <div class="form-group">
                             <label>Jenis Kayu</label>
-                            <select id="woodTypeSelect_create">
-                                <option value="">-- Pilih Jenis Kayu --</option>
-                                <?php foreach ($woodTypes as $wt): ?>
-                                    <option value="<?php echo htmlspecialchars($wt); ?>"><?php echo htmlspecialchars($wt); ?></option>
-                                <?php endforeach; ?>
-                                <option value="other">Lainnya...</option>
-                            </select>
-                            <input type="text" id="woodTypeOther_create" placeholder="Masukkan jenis kayu lain" style="display:none;margin-top:8px;">
-                            <input type="hidden" name="wood_type" id="wood_type_create">
+                            <input type="text" name="wood_type" placeholder="cth: Jati, Mahoni">
                         </div>
                         <div class="form-group">
                             <label>Warna</label>
-                            <select id="colorSelect_create">
-                                <option value="">-- Pilih Warna --</option>
-                                <?php foreach ($colors as $c): ?>
-                                    <option value="<?php echo htmlspecialchars($c); ?>"><?php echo htmlspecialchars($c); ?></option>
-                                <?php endforeach; ?>
-                                <option value="other">Lainnya...</option>
-                            </select>
-                            <input type="text" id="colorOther_create" placeholder="Masukkan warna lain" style="display:none;margin-top:8px;">
-                            <input type="hidden" name="color" id="color_create">
+                            <input type="text" name="color" placeholder="cth: Cokelat, Hitam">
                         </div>
                     </div>
                     <div class="form-group">
@@ -704,7 +690,7 @@ if (empty($error)) {
 
             <div class="section-header">Edit Produk</div>
             <div class="section-content">
-                <form id="updateForm" method="post" enctype="multipart/form-data">
+                <form method="post" enctype="multipart/form-data">
                     <input type="hidden" name="action" value="update">
                     <div class="form-row-2">
                         <div class="form-group">
@@ -729,7 +715,7 @@ if (empty($error)) {
                             <select name="category_id" id="editCategory">
                                 <option value="">-- Pilih Kategori --</option>
                                 <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo $cat['id']; ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
+                                    <option value="<?php echo htmlspecialchars($categoryValueField === 'name' ? $cat['name'] : $cat['id']); ?>"><?php echo htmlspecialchars($cat['name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -745,27 +731,11 @@ if (empty($error)) {
                         </div>
                         <div class="form-group">
                             <label>Jenis Kayu</label>
-                            <select id="woodTypeSelect_update">
-                                <option value="">-- Pilih Jenis Kayu --</option>
-                                <?php foreach ($woodTypes as $wt): ?>
-                                    <option value="<?php echo htmlspecialchars($wt); ?>"><?php echo htmlspecialchars($wt); ?></option>
-                                <?php endforeach; ?>
-                                <option value="other">Lainnya...</option>
-                            </select>
-                            <input type="text" id="woodTypeOther_update" placeholder="Masukkan jenis kayu lain" style="display:none;margin-top:8px;">
-                            <input type="hidden" name="wood_type" id="wood_type_update">
+                            <input type="text" name="wood_type" id="editWoodType">
                         </div>
                         <div class="form-group">
                             <label>Warna</label>
-                            <select id="colorSelect_update">
-                                <option value="">-- Pilih Warna --</option>
-                                <?php foreach ($colors as $c): ?>
-                                    <option value="<?php echo htmlspecialchars($c); ?>"><?php echo htmlspecialchars($c); ?></option>
-                                <?php endforeach; ?>
-                                <option value="other">Lainnya...</option>
-                            </select>
-                            <input type="text" id="colorOther_update" placeholder="Masukkan warna lain" style="display:none;margin-top:8px;">
-                            <input type="hidden" name="color" id="color_update">
+                            <input type="text" name="color" id="editColor">
                         </div>
                     </div>
                     <div class="form-group">
@@ -828,25 +798,11 @@ if (empty($error)) {
                                 <?php foreach ($products as $p): ?>
                                     <tr>
                                         <td>
-                                            <?php
-                                                $imgCols = [
-                                                    'image_front' => 'Tampak Depan',
-                                                    'image_side' => 'Tampak Samping',
-                                                    'image_back' => 'Tampak Belakang',
-                                                    'image_45degree' => 'Tampak 45°',
-                                                    'image' => 'Gambar Utama'
-                                                ];
-                                                $hasAny = false;
-                                                foreach ($imgCols as $col => $label) {
-                                                    if (!empty($p[$col]) && file_exists(__DIR__ . '/../' . $p[$col])) {
-                                                        $hasAny = true;
-                                                        echo '<img class="thumb clickable" src="../' . htmlspecialchars($p[$col]) . '" data-src="../' . htmlspecialchars($p[$col]) . '" data-type="' . $label . '" onclick="openImageModal(this.dataset.src, this.dataset.type)">';
-                                                    }
-                                                }
-                                                if (!$hasAny) {
-                                                    echo '<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#f0f0f0;color:#999;">N/A</div>';
-                                                }
-                                            ?>
+                                            <?php if (!empty($p['image']) && file_exists(__DIR__ . '/../' . $p['image'])): ?>
+                                                <img class="thumb" src="../<?php echo htmlspecialchars($p['image']); ?>" alt="">
+                                            <?php else: ?>
+                                                <div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#f0f0f0;color:#999;">N/A</div>
+                                            <?php endif; ?>
                                         </td>
                                         <td><?php echo htmlspecialchars($p['name']); ?></td>
                                         <td><?php echo htmlspecialchars($p['category_name'] ?? '-'); ?></td>
@@ -873,106 +829,14 @@ if (empty($error)) {
 
     <script src="../js/dashboard.js"></script>
     <script>
-        // Open image modal with given src and caption
-        function openImageModal(src, caption) {
-            const modal = document.getElementById('imgModal');
-            const modalImg = document.getElementById('imgModalImg');
-            const modalCaption = document.getElementById('imgModalCaption');
-            modalImg.src = src;
-            modalCaption.innerText = caption || '';
-            modal.style.display = 'flex';
-        }
-
-        document.addEventListener('DOMContentLoaded', function() {
-            // Close modal handlers
-            const modal = document.getElementById('imgModal');
-            if (modal) {
-                document.getElementById('imgModalClose').addEventListener('click', function(e){ modal.style.display='none'; });
-                modal.addEventListener('click', function(e){ if (e.target.id === 'imgModal' || e.target.id === 'imgModalClose') modal.style.display='none'; });
-            }
-
-            // Wire up create form selects
-            const woodSelCreate = document.getElementById('woodTypeSelect_create');
-            const woodOtherCreate = document.getElementById('woodTypeOther_create');
-            const woodHiddenCreate = document.getElementById('wood_type_create');
-            if (woodSelCreate) {
-                woodSelCreate.addEventListener('change', function(){
-                    if (this.value === 'other') { woodOtherCreate.style.display='block'; }
-                    else { woodOtherCreate.style.display='none'; }
-                });
-            }
-            const colorSelCreate = document.getElementById('colorSelect_create');
-            const colorOtherCreate = document.getElementById('colorOther_create');
-            const colorHiddenCreate = document.getElementById('color_create');
-            if (colorSelCreate) {
-                colorSelCreate.addEventListener('change', function(){
-                    if (this.value === 'other') { colorOtherCreate.style.display='block'; }
-                    else { colorOtherCreate.style.display='none'; }
-                });
-            }
-
-            // Wire up update form selects
-            const woodSelUpd = document.getElementById('woodTypeSelect_update');
-            const woodOtherUpd = document.getElementById('woodTypeOther_update');
-            const woodHiddenUpd = document.getElementById('wood_type_update');
-            if (woodSelUpd) {
-                woodSelUpd.addEventListener('change', function(){
-                    if (this.value === 'other') { woodOtherUpd.style.display='block'; }
-                    else { woodOtherUpd.style.display='none'; }
-                });
-            }
-            const colorSelUpd = document.getElementById('colorSelect_update');
-            const colorOtherUpd = document.getElementById('colorOther_update');
-            const colorHiddenUpd = document.getElementById('color_update');
-            if (colorSelUpd) {
-                colorSelUpd.addEventListener('change', function(){
-                    if (this.value === 'other') { colorOtherUpd.style.display='block'; }
-                    else { colorOtherUpd.style.display='none'; }
-                });
-            }
-
-            // On submit, copy selected/other into hidden inputs for both forms
-            const createForm = document.getElementById('createForm');
-            if (createForm) {
-                createForm.addEventListener('submit', function(e){
-                    if (woodSelCreate) {
-                        woodHiddenCreate.value = (woodSelCreate.value === 'other') ? (woodOtherCreate.value || '') : (woodSelCreate.value || '');
-                    }
-                    if (colorSelCreate) {
-                        colorHiddenCreate.value = (colorSelCreate.value === 'other') ? (colorOtherCreate.value || '') : (colorSelCreate.value || '');
-                    }
-                });
-            }
-            const updateForm = document.getElementById('updateForm');
-            if (updateForm) {
-                updateForm.addEventListener('submit', function(e){
-                    if (woodSelUpd) {
-                        woodHiddenUpd.value = (woodSelUpd.value === 'other') ? (woodOtherUpd.value || '') : (woodSelUpd.value || '');
-                    }
-                    if (colorSelUpd) {
-                        colorHiddenUpd.value = (colorSelUpd.value === 'other') ? (colorOtherUpd.value || '') : (colorSelUpd.value || '');
-                    }
-                });
-            }
-        });
-
         function populateProductData(productId) {
             if (!productId) {
                 document.getElementById('editName').value = '';
                 document.getElementById('editCategory').value = '';
                 document.getElementById('editPrice').value = '';
                 document.getElementById('editStock').value = '';
-                // reset selects and other inputs
-                const wsel = document.getElementById('woodTypeSelect_update');
-                const wother = document.getElementById('woodTypeOther_update');
-                const whid = document.getElementById('wood_type_update');
-                if (wsel) { wsel.value = ''; if (wother) wother.style.display='none'; }
-                if (whid) whid.value = '';
-                const csel = document.getElementById('colorSelect_update');
-                const cother = document.getElementById('colorOther_update');
-                const chid = document.getElementById('color_update');
-                if (csel) { csel.value = ''; if (cother) cother.style.display='none'; }
-                if (chid) chid.value = '';
+                document.getElementById('editWoodType').value = '';
+                document.getElementById('editColor').value = '';
                 document.getElementById('editDescription').value = '';
                 return;
             }
@@ -981,52 +845,16 @@ if (empty($error)) {
             if (option && option.dataset.product) {
                 const product = JSON.parse(option.dataset.product);
                 document.getElementById('editName').value = product.name || '';
-                document.getElementById('editCategory').value = product.category_id || '';
+                document.getElementById('editCategory').value = product.category_id || product.category_name || '';
                 document.getElementById('editPrice').value = product.price || '';
                 document.getElementById('editStock').value = product.stock || '';
-
-                // wood type: if present in options set select, otherwise set to other and fill text
-                const wsel = document.getElementById('woodTypeSelect_update');
-                const wother = document.getElementById('woodTypeOther_update');
-                const whid = document.getElementById('wood_type_update');
-                const wval = product.wood_type || '';
-                if (wsel) {
-                    let found = false;
-                    for (let i=0;i<wsel.options.length;i++){
-                        if (wsel.options[i].value === wval){ found = true; break; }
-                    }
-                    if (found) { wsel.value = wval; if (wother) wother.style.display='none'; if (whid) whid.value = wval; }
-                    else if (wval) { wsel.value = 'other'; if (wother) { wother.style.display='block'; wother.value = wval; } if (whid) whid.value = wval; }
-                    else { wsel.value = ''; if (wother) wother.style.display='none'; if (whid) whid.value = ''; }
-                }
-
-                // color
-                const csel = document.getElementById('colorSelect_update');
-                const cother = document.getElementById('colorOther_update');
-                const chid = document.getElementById('color_update');
-                const cval = product.color || '';
-                if (csel) {
-                    let found = false;
-                    for (let i=0;i<csel.options.length;i++){
-                        if (csel.options[i].value === cval){ found = true; break; }
-                    }
-                    if (found) { csel.value = cval; if (cother) cother.style.display='none'; if (chid) chid.value = cval; }
-                    else if (cval) { csel.value = 'other'; if (cother) { cother.style.display='block'; cother.value = cval; } if (chid) chid.value = cval; }
-                    else { csel.value = ''; if (cother) cother.style.display='none'; if (chid) chid.value = ''; }
-                }
-
+                document.getElementById('editWoodType').value = product.wood_type || '';
+                document.getElementById('editColor').value = product.color || '';
                 document.getElementById('editDescription').value = product.description || '';
             }
         }
                                             
     </script>
-
-    <!-- Image modal -->
-    <div id="imgModal" style="display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.8);align-items:center;justify-content:center;">
-        <span id="imgModalClose" style="position:absolute;right:20px;top:20px;color:#fff;font-size:28px;cursor:pointer;">&times;</span>
-        <img id="imgModalImg" src="" style="max-width:90%;max-height:90%;border-radius:8px;">
-        <div id="imgModalCaption" style="color:#fff;margin-top:10px;text-align:center;"></div>
-    </div>
 </body>
 </html>
                                         
